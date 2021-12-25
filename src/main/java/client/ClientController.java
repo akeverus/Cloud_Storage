@@ -15,19 +15,21 @@ import java.util.ResourceBundle;
 
 public class ClientController implements Initializable {
 
-    public ListView<String> listView;
-
-    public TextField textField;
+    public ListView<String> listViewClient;
+    public ListView<String> listViewServer;
+    public TextField textFieldClient;
+    public TextField textFieldServer;
 
     private DataInputStream is;
     private DataOutputStream os;
 
     private File currentDir;
+    private File serverDir;
 
     private byte[] buf;
 
-    public void sendMessage(ActionEvent actionEvent) throws IOException {
-        String fileName = textField.getText();
+    public void sendMessageToServer(ActionEvent actionEvent) throws IOException {
+        String fileName = textFieldClient.getText();
         File currentFile = currentDir.toPath().resolve(fileName).toFile();
         os.writeUTF("#SEND#FILE#");
         os.writeUTF(fileName);
@@ -42,14 +44,35 @@ public class ClientController implements Initializable {
             }
         }
         os.flush();
-        textField.clear();
+        fillServerDirFiles();
+        textFieldClient.clear();
+    }
+
+    public void sendMessageToClient(ActionEvent actionEvent) throws IOException {
+        String fileName = textFieldServer.getText();
+        File currentFile = serverDir.toPath().resolve(fileName).toFile();
+        os.writeUTF("#RECEIVE#FILE#");
+        os.writeUTF(fileName);
+        os.writeLong(currentFile.length());
+        try (FileInputStream is = new FileInputStream(currentFile)) {
+            while (true) {
+                int read = is.read(buf);
+                if (read == - 1) {
+                    break;
+                }
+                os.write(buf, 0, read);
+            }
+        }
+        os.flush();
+        fillCurrentDirFiles();
+        textFieldServer.clear();
     }
 
     private void read() {
         try {
             while (true) {
                 String message = is.readUTF();
-                Platform.runLater(() -> textField.setText(message));
+                Platform.runLater(() -> textFieldClient.setText(message));
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -58,23 +81,43 @@ public class ClientController implements Initializable {
     }
 
     private void fillCurrentDirFiles() {
-        listView.getItems().clear();
-        listView.getItems().add("..");
-        listView.getItems().addAll(currentDir.list());
+        listViewClient.getItems().clear();
+        listViewClient.getItems().add("..");
+        listViewClient.getItems().addAll(currentDir.list());
+    }
+
+    private void fillServerDirFiles() {
+        listViewServer.getItems().clear();
+        listViewServer.getItems().add("..");
+        listViewServer.getItems().addAll(serverDir.list());
     }
 
     private void initClickListener() {
-        listView.setOnMouseClicked(e -> {
+        listViewClient.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2) {
-                String fileName = listView.getSelectionModel().getSelectedItem();
+                String fileName = listViewClient.getSelectionModel().getSelectedItem();
                 System.out.println("Выбран файл: " + fileName);
                 Path path = currentDir.toPath().resolve(fileName);
                 if (Files.isDirectory(path)) {
                     currentDir = path.toFile();
                     fillCurrentDirFiles();
-                    textField.clear();
+                    textFieldClient.clear();
                 } else {
-                    textField.setText(fileName);
+                    textFieldClient.setText(fileName);
+                }
+            }
+        });
+        listViewServer.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                String fileName = listViewServer.getSelectionModel().getSelectedItem();
+                System.out.println("Выбран файл: " + fileName);
+                Path path = serverDir.toPath().resolve(fileName);
+                if (Files.isDirectory(path)) {
+                    serverDir = path.toFile();
+                    fillServerDirFiles();
+                    textFieldServer.clear();
+                } else {
+                    textFieldServer.setText(fileName);
                 }
             }
         });
@@ -85,7 +128,9 @@ public class ClientController implements Initializable {
         try {
             buf = new byte[256];
             currentDir = new File(System.getProperty("user.home"));
+            serverDir = new File("serverDir");
             fillCurrentDirFiles();
+            fillServerDirFiles();
             initClickListener();
             Socket socket = new Socket("localhost", 8189);
             is = new DataInputStream(socket.getInputStream());
