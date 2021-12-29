@@ -8,7 +8,11 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 public class NioEchoServer {
@@ -20,18 +24,18 @@ public class NioEchoServer {
      * cat file_name - распечатать содержание файла на экран
      * mkdir dir_name - создать директорию в текущей
      * touch file_name - создать пустой файл в текущей директории
-     * */
+     */
 
-    private ServerSocketChannel serverChannel;
-    private Selector selector;
-    private ByteBuffer buf;
+    private final ServerSocketChannel serverChannel;
+    private final Selector selector;
+    private final ByteBuffer buf;
 
     public NioEchoServer() throws IOException {
         buf = ByteBuffer.allocate(5);
         serverChannel = ServerSocketChannel.open();
         selector = Selector.open();
         serverChannel.configureBlocking(false);
-        serverChannel.bind(new InetSocketAddress(8189));
+        serverChannel.bind(new InetSocketAddress(8190));
         serverChannel.register(selector, SelectionKey.OP_ACCEPT);
         System.out.println("Server started...");
         while (serverChannel.isOpen()) {
@@ -56,6 +60,7 @@ public class NioEchoServer {
         SocketChannel channel = (SocketChannel) key.channel();
         StringBuilder s = new StringBuilder();
         int read = 0;
+        buf.clear();
         while (true) {
             read = channel.read(buf);
             if (read == 0) {
@@ -71,9 +76,41 @@ public class NioEchoServer {
             }
             buf.clear();
         }
-        // process(s)
+        process(s.toString(), channel);
         System.out.println("Received: " + s);
-        channel.write(ByteBuffer.wrap(s.toString().getBytes(StandardCharsets.UTF_8)));
+        channel.write(ByteBuffer.wrap(s.toString().getBytes(StandardCharsets.US_ASCII)));
+    }
+
+    private void process(String s, SocketChannel channel) throws IOException {
+        Path workingDir = Paths.get("serverDir");
+        if (s.equals("ls")) {
+            List<String> filesWorkingDir = Files.readAllLines(workingDir);
+            for (String str : filesWorkingDir) {
+                channel.write(ByteBuffer.wrap(str.getBytes(StandardCharsets.US_ASCII)));
+            }
+        } else if (s.startsWith("cd")) {
+            String[] str = s.split(" ");
+            Path path = Paths.get(workingDir + "//" + str[1]);
+            if (Files.exists(path)) {
+                workingDir = path;
+            }
+        } else if (s.startsWith("cat")) {
+            String[] str = s.split(" ");
+            Path path = Paths.get(workingDir + "//" + str[1]);
+            channel.write(ByteBuffer.wrap(Files.readAllBytes(path)));
+        } else if (s.startsWith("mkdir")) {
+            String[] str = s.split(" ");
+            Path newDir = Paths.get(workingDir + "//" + str[1]);
+            if (!Files.exists(newDir)) {
+                Files.createDirectory(workingDir);
+            }
+        } else if (s.startsWith("touch")) {
+            String[] str = s.split(" ");
+            Path path = Paths.get(workingDir + "//" + str[1]);
+            if (!Files.exists(path)) {
+                Files.createFile(path);
+            }
+        }
     }
 
     private void handleAccept() throws IOException {
@@ -81,7 +118,7 @@ public class NioEchoServer {
         channel.configureBlocking(false);
         channel.register(selector, SelectionKey.OP_READ);
         channel.write(ByteBuffer.wrap(
-                "Hello user. Welcome to our terminal\n\r".getBytes(StandardCharsets.UTF_8)
+                "Hello user. Welcome to our terminal\n\r".getBytes(StandardCharsets.US_ASCII)
         ));
         System.out.println("Client accepted...");
     }
